@@ -25,12 +25,18 @@ class CNNModel(nn.Module):
         return x
 
 # Modeli yükle
-model = CNNModel(num_classes=4)
-model.load_state_dict(torch.load('demans_model.pth', map_location=torch.device('cpu')))
-model.eval()
+@st.cache_resource
+def load_model(model_path, num_classes):
+    model = CNNModel(num_classes=num_classes)
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    model.eval()
+    return model
+
+model = load_model('demans_model.pth', num_classes=4)
 
 # Sınıf isimleri
-class_names =['Mild Dementia', 'Moderate Dementia', 'Non Demented', 'Very mild Dementia']
+class_names = ['Mild Dementia', 'Moderate Dementia', 'Non Demented', 'Very mild Dementia']
+
 # Görüntü ön işleme fonksiyonu
 def preprocess_image(img):
     transform = transforms.Compose([
@@ -54,24 +60,27 @@ def predict_image(img):
 # Streamlit arayüzü
 st.title("Demans Sınıflandırma Uygulaması")
 
-camera_input = st.camera_input('Kameradan resim çek')
-gallery_input = st.file_uploader('VEYA Tomografi Resmi Yükleyin', accept_multiple_files=False)
+uploaded_files = st.file_uploader('Tomografi Resimlerini Yükleyin (en fazla 3 adet)', accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
 
-if camera_input is not None:
-    img_bytes = camera_input.getvalue()
-    img = Image.open(BytesIO(img_bytes)).convert('L')  # Görüntüyü siyah-beyaza dönüştür
+if uploaded_files:
+    predictions = []
+    confidences = []
 
-    predicted_class, confidence = predict_image(img)
-    st.write(f"Tahmin Edilen Sınıf: {class_names[predicted_class]}")
-    st.write(f"İnanılırlık Yüzdesi: {confidence*100:.2f}%")
-
-elif gallery_input is not None:
-    img_bytes = gallery_input.getvalue()
-    img = Image.open(BytesIO(img_bytes)).convert('L')  # Görüntüyü siyah-beyaza dönüştür
-
-    predicted_class, confidence = predict_image(img)
-    st.write(f"Tahmin Edilen Sınıf: {class_names[predicted_class]}")
-    st.write(f"İnanılırlık Yüzdesi: {confidence*100:.2f}%")
+    for file in uploaded_files[:3]:  # Maksimum 3 dosya işleme
+        img_bytes = file.getvalue()
+        img = Image.open(BytesIO(img_bytes)).convert('L')  # Görüntüyü siyah-beyaza dönüştür
+        predicted_class, confidence = predict_image(img)
+        predictions.append(predicted_class)
+        confidences.append(confidence)
+        st.write(f"Yüklenen Resim: {file.name}")
+        st.write(f"Tahmin Edilen Sınıf: {class_names[predicted_class]}")
+        st.write(f"İnanılırlık Yüzdesi: {confidence * 100:.2f}%")
+    
+    # Ortalama tahmin ve güven
+    avg_prediction = np.mean(predictions)
+    avg_confidence = np.mean(confidences)
+    st.write(f"\nOrtalama Tahmin Edilen Sınıf: {class_names[int(avg_prediction)]}")
+    st.write(f"Ortalama İnanılırlık Yüzdesi: {avg_confidence * 100:.2f}%")
 
 else:
-    st.write("Lütfen bir resim yükleyin veya kamera kullanarak bir resim çekin.")
+    st.write("Lütfen en fazla 3 resim yükleyin.")
